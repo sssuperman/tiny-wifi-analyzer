@@ -1,7 +1,6 @@
 # Tiny Wi-Fi Analyzer
 
-[![CD](https://github.com/nolze/tiny-wifi-analyzer/workflows/CD/badge.svg)](https://github.com/nolze/tiny-wifi-analyzer/actions?query=workflow%3ACD)
-<a href="https://www.buymeacoffee.com/nolze" title="Donate to this project using Buy Me A Coffee"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-orange.svg" alt="Buy Me A Coffee donate button" /></a>
+> Forked from [nolze/tiny-wifi-analyzer](https://github.com/nolze/tiny-wifi-analyzer)
 
 Simple, open-source Wi-Fi channel and strength analyzer for macOS.
 Made with PyObjC, pywebview, ApexCharts, PyInstaller.
@@ -16,13 +15,25 @@ Made with PyObjC, pywebview, ApexCharts, PyInstaller.
 * Export charts as images (PNG, JPEG, or SVG)
 * Export chart data as a CSV file
 
+## Improvements over upstream
+
+* **Tab-based band switching** — 2.4G / 5G / 6G bands displayed as underline-style tabs instead of vertically stacked charts, with lazy chart rendering on first data arrival
+* **Stable SSID colors** — global BSSID-to-color mapping with a 30-color palette ensures each network keeps its color across scan cycles
+* **SSID filter panel** — checkbox chip bar to show/hide specific SSIDs; filter state persists across tab switches and applies to all bands
+* **Bandwidth display** — channel width (e.g. 80MHz) shown in both the legend and data labels on the chart
+* **Correct channel width from CoreWLAN** — converts `CWChannelWidth` enum values to actual MHz, fixing both triangle span calculation and displayed bandwidth
+* **Reduced grid density** — switched x-axis from category to numeric type so `tickAmount` controls grid lines, eliminating the 233-line wall on 6 GHz
+* **Deferred empty-band rendering** — charts for bands with no detected networks stay in placeholder state instead of rendering an empty chart frame
+* **Dynamic chart initialization** — `window.init(bands)` creates only the tabs and charts for bands the system actually supports
+* **Location Services dialog** — added an "Ignore" button for the macOS 14+ Location Services permission prompt
+
 ## Requirements
 
 * macOS 10.15 (Catalina) or later (may work in 10.14 and earlier)
 
 ## Download
 
-[Visit the latest release](https://github.com/nolze/tiny-wifi-analyzer/releases/latest/)
+[Visit the latest release](https://github.com/sssuperman/tiny-wifi-analyzer/releases/latest/)
 
 ### Important notes
 
@@ -52,7 +63,7 @@ Please enable Location Services by following the instructions.
 ## Develop
 
 ```sh
-git clone https://github.com/nolze/tiny-wifi-analyzer
+git clone https://github.com/sssuperman/tiny-wifi-analyzer
 cd tiny-wifi-analyzer
 poetry install
 poetry run python -m tiny_wifi_analyzer
