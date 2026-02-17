@@ -69,15 +69,89 @@
       .noscroll {
         overflow: hidden;
       }
+
+      #tab-bar {
+        display: flex;
+        gap: 0;
+        padding: 0 10px;
+        border-bottom: 2px solid #e0e0e0;
+        margin-bottom: 12px;
+      }
+
+      .tab-btn {
+        padding: 8px 20px;
+        border: none;
+        background: none;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #666;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: color 0.15s, border-color 0.15s;
+      }
+
+      .tab-btn:hover {
+        color: #333;
+      }
+
+      .tab-btn.active {
+        color: #008FFB;
+        border-bottom-color: #008FFB;
+      }
+
+      .chart-container.hidden-tab {
+        display: none;
+      }
+
+      .chart-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 400px;
+        color: #888;
+        font-size: 16px;
+        font-family: sans-serif;
+      }
+
+      #ssid-filter {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 4px 10px 8px;
+        align-items: center;
+      }
+
+      .ssid-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: #f0f0f0;
+        font-size: 12px;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+        user-select: none;
+        transition: opacity 0.15s;
+      }
+
+      .ssid-chip.hidden {
+        opacity: 0.4;
+      }
+
+      .ssid-chip input[type="checkbox"] {
+        margin: 0;
+        cursor: pointer;
+      }
     </style>
   </head>
 
   <body>
-    <div id="charts" style="display: flex; flex-wrap: wrap">
-      <div class="chart-container"><div class="chart" id="chart24"></div></div>
-      <div class="chart-container"><div class="chart" id="chart5"></div></div>
-      <div class="chart-container"><div class="chart" id="chart6"></div></div>
-    </div>
+    <div id="tab-bar"></div>
+    <div id="ssid-filter"></div>
+    <div id="charts" style="display: flex; flex-wrap: wrap"></div>
     <script type="module">
       import ApexCharts from "apexcharts";
 
@@ -86,7 +160,41 @@
       const CHANNEL_NUMBER_MAX_6 = 233;
 
       let rawSeriesData = {};
+      let displaySeriesData = {};
       let lastZoom = {};
+
+      const colorMap = {};
+      let colorIndex = 0;
+      const COLOR_PALETTE = [
+        '#008FFB', '#00E396', '#FEB019', '#FF4560', '#775DD0',
+        '#3F51B5', '#03A9F4', '#4CAF50', '#F9CE1D', '#FF6384',
+        '#36A2EB', '#FFCE56', '#9966FF', '#FF9F40', '#C9CBCF',
+        '#E91E63', '#9C27B0', '#00BCD4', '#8BC34A', '#FF5722',
+        '#607D8B', '#795548', '#CDDC39', '#009688', '#673AB7',
+        '#2196F3', '#FF9800', '#4DB6AC', '#BA68C8', '#AED581',
+      ];
+
+      let activeBand = null;
+      const pendingCharts = {};
+      const hiddenSSIDs = new Set();
+      const knownSSIDs = new Set();
+
+      const BAND_CONFIG = [
+        { id: '24', name: '2.4GHz', maxChannel: CHANNEL_NUMBER_MAX_24 },
+        { id: '5',  name: '5GHz',   maxChannel: CHANNEL_NUMBER_MAX_5 },
+        { id: '6',  name: '6GHz',   maxChannel: CHANNEL_NUMBER_MAX_6 },
+      ];
+
+      function switchTab(bandId) {
+        activeBand = bandId;
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.band === bandId);
+        });
+        document.querySelectorAll('.chart-container').forEach(el => {
+          el.classList.toggle('hidden-tab', el.dataset.band !== bandId);
+        });
+        window.dispatchEvent(new Event('resize'));
+      }
 
       function makeOptions(bandId, bandName, channels) {
         const options = {
@@ -224,13 +332,16 @@
               toggleDataSeries: false,
             },
             formatter: (seriesName, { seriesIndex, w }) => {
+              const disp = displaySeriesData[bandId];
+              if (!disp || !disp[seriesIndex]) return seriesName;
               const yValue = w.config.series[seriesIndex].data[1][1];
               const xValue = w.config.series[seriesIndex].data[1][0];
-              let ssid = rawSeriesData[bandId][seriesIndex].ssid;
+              let ssid = disp[seriesIndex].ssid;
               if (ssid === null) ssid = "n/a";
-              const bssid = rawSeriesData[bandId][seriesIndex].name;
+              const bssid = disp[seriesIndex].name;
+              const bw = disp[seriesIndex].channelWidth;
               return [
-                `Channel: ${xValue} RSSI: ${yValue}dBm`,
+                `Channel: ${xValue} RSSI: ${yValue}dBm BW: ${bw}MHz`,
                 "<br>",
                 ssid != "n/a"
                   ? `<b>${ssid}</b>`
@@ -241,15 +352,14 @@
             },
           },
           xaxis: {
-            type: "category",
-            categories: channels,
+            type: "numeric",
             min: channels[0],
             max: channels[channels.length - 1],
             tickAmount: Math.min(channels.length - 1, 15),
-            tickPlacement: "on",
             labels: {
               rotate: false,
               hideOverlappingLabels: true,
+              formatter: (val) => Math.round(val),
             },
             title: {
               text: "channel",
@@ -283,11 +393,14 @@
             enabled: true,
             formatter: (val, { seriesIndex, dataPointIndex, w }) => {
               if (val === -100) return "";
-              // const ssid = w.config.series[seriesIndex].ssid;
-              const ssid = rawSeriesData[bandId][seriesIndex].ssid;
+              const disp = displaySeriesData[bandId];
+              if (!disp || !disp[seriesIndex]) return "";
+              const ssid = disp[seriesIndex].ssid;
               const ch = w.config.series[seriesIndex].data[1][0];
-              if (ssid === null) return `${ch} n/a`;
-              return `${ch} ${ssid}`;
+              const bw = disp[seriesIndex].channelWidth;
+              const bwStr = bw ? ` ${bw}M` : "";
+              if (ssid === null) return `${ch} n/a${bwStr}`;
+              return `${ch} ${ssid}${bwStr}`;
             },
           },
           markers: {
@@ -328,7 +441,7 @@
             text: bandName,
           },
           noData: {
-            text: "Loading...",
+            text: "Scanning...",
             align: "center",
             verticalAlign: "middle",
             style: {
@@ -341,62 +454,132 @@
         return options;
       }
 
+      function rebuildFilterPanel() {
+        const panel = document.getElementById('ssid-filter');
+        const currentSSIDs = new Set();
+        for (const bandId of Object.keys(rawSeriesData)) {
+          for (const s of rawSeriesData[bandId]) {
+            currentSSIDs.add(s.ssid ?? 'n/a');
+          }
+        }
+        for (const ssid of currentSSIDs) {
+          if (knownSSIDs.has(ssid)) continue;
+          knownSSIDs.add(ssid);
+          const label = document.createElement('label');
+          label.className = 'ssid-chip';
+          label.dataset.ssid = ssid;
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = !hiddenSSIDs.has(ssid);
+          cb.addEventListener('change', () => {
+            if (cb.checked) {
+              hiddenSSIDs.delete(ssid);
+              label.classList.remove('hidden');
+            } else {
+              hiddenSSIDs.add(ssid);
+              label.classList.add('hidden');
+            }
+            for (const bid of Object.keys(rawSeriesData)) {
+              applyFilter(bid);
+            }
+          });
+          const span = document.createElement('span');
+          span.textContent = ssid;
+          label.appendChild(cb);
+          label.appendChild(span);
+          panel.appendChild(label);
+        }
+      }
+
+      function applyFilter(bandId) {
+        const chart = window[`chart${bandId}`];
+        if (!chart || !rawSeriesData[bandId]) return;
+        const filtered = rawSeriesData[bandId].filter(s => {
+          const ssid = s.ssid ?? 'n/a';
+          return !hiddenSSIDs.has(ssid);
+        });
+        displaySeriesData[bandId] = filtered;
+        const colors = filtered.map(s => colorMap[s.name]);
+        try {
+          chart.w.config.colors = colors;
+          chart.updateSeries(filtered);
+        } catch (e) {
+          console.error("Failed to apply filter", e);
+        }
+      }
+
       window.init = (bands) => {
-        const chart24 = window.chart24;
-        const chart5 = window.chart5;
-        const chart6 = window.chart6;
+        const tabBar = document.getElementById('tab-bar');
+        const chartsDiv = document.getElementById('charts');
+        let firstBand = null;
 
-        if (bands["24"]) {
-          const options24 = makeOptions(
-            "24",
-            "2.4GHz",
-            [...Array(CHANNEL_NUMBER_MAX_24).keys()].map((v) => v + 1),
-          );
-          const chart24 = new ApexCharts(
-            document.querySelector("#chart24"),
-            options24,
-          );
-          window.chart24 = chart24;
-          chart24.render();
+        for (const config of BAND_CONFIG) {
+          const bandId = config.id;
+          if (!bands[bandId]) continue;
+          if (!firstBand) firstBand = bandId;
+
+          const btn = document.createElement('button');
+          btn.className = 'tab-btn';
+          btn.dataset.band = bandId;
+          btn.textContent = config.name;
+          btn.addEventListener('click', () => switchTab(bandId));
+          tabBar.appendChild(btn);
+
+          const container = document.createElement('div');
+          container.className = 'chart-container hidden-tab';
+          container.dataset.band = bandId;
+          const chartDiv = document.createElement('div');
+          chartDiv.className = 'chart';
+          chartDiv.id = `chart${bandId}`;
+          container.appendChild(chartDiv);
+          chartsDiv.appendChild(container);
+
+          const placeholder = document.createElement('div');
+          placeholder.className = 'chart-placeholder';
+          placeholder.textContent = 'Scanning...';
+          container.appendChild(placeholder);
+          chartDiv.style.display = 'none';
+
+          const channels = [...Array(config.maxChannel).keys()].map(v => v + 1);
+          const options = makeOptions(bandId, config.name, channels);
+          const chart = new ApexCharts(chartDiv, options);
+          pendingCharts[bandId] = chart;
         }
 
-        if (bands["5"]) {
-          const options5 = makeOptions(
-            "5",
-            "5GHz",
-            [...Array(CHANNEL_NUMBER_MAX_5).keys()].map((v) => v + 1),
-          );
-          const chart5 = new ApexCharts(
-            document.querySelector("#chart5"),
-            options5,
-          );
-          window.chart5 = chart5;
-          chart5.render();
-        }
-
-        if (bands["6"]) {
-          const options6 = makeOptions(
-            "6",
-            "6GHz",
-            [...Array(CHANNEL_NUMBER_MAX_6).keys()].map((v) => v + 1),
-          );
-          const chart6 = new ApexCharts(
-            document.querySelector("#chart6"),
-            options6,
-          );
-          window.chart6 = chart6;
-          chart6.render();
-        }
+        if (firstBand) switchTab(firstBand);
       };
 
       window.updateChart = (bandId, series) => {
+        if (pendingCharts[bandId]) {
+          if (series.length === 0) return;
+          const chart = pendingCharts[bandId];
+          const container = chart.el.parentElement;
+          const placeholder = container.querySelector('.chart-placeholder');
+          if (placeholder) placeholder.remove();
+          chart.el.style.display = '';
+          chart.render();
+          window[`chart${bandId}`] = chart;
+          delete pendingCharts[bandId];
+        }
         if (window[`chart${bandId}`]) {
-          rawSeriesData[bandId] = series;
-          try {
-            window[`chart${bandId}`].updateSeries(series);
-          } catch (e) {
-            console.error("Failed to update series", e);
+          const sorted = [...series].sort((a, b) => {
+            const ssidA = a.ssid ?? '\uffff';
+            const ssidB = b.ssid ?? '\uffff';
+            if (ssidA !== ssidB) return ssidA.localeCompare(ssidB);
+            return (a.name || '').localeCompare(b.name || '');
+          });
+
+          for (const s of sorted) {
+            const bssid = s.name;
+            if (!(bssid in colorMap)) {
+              colorMap[bssid] = COLOR_PALETTE[colorIndex % COLOR_PALETTE.length];
+              colorIndex++;
+            }
           }
+
+          rawSeriesData[bandId] = sorted;
+          rebuildFilterPanel();
+          applyFilter(bandId);
         }
       };
     </script>
