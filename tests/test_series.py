@@ -26,6 +26,7 @@ def test_to_series_24ghz_basic_triangle():
     assert pts[0] == [4, -100]
     assert pts[1] == [6, -50]
     assert pts[2] == [8, -100]
+    assert s[0]["channelWidth"] == 20
 
 
 def test_to_series_24ghz_clamped():
@@ -46,6 +47,41 @@ def test_to_series_5ghz_width_mapping():
     assert pts[0] == [92, -100]
     assert pts[1] == [100, -60]
     assert pts[2] == [108, -100]
+
+
+def test_width_to_mhz():
+    # Enum values from CoreWLAN
+    assert series.width_to_mhz(0) == 20
+    assert series.width_to_mhz(1) == 20
+    assert series.width_to_mhz(2) == 40
+    assert series.width_to_mhz(3) == 80
+    assert series.width_to_mhz(4) == 160
+    # Already MHz — pass through
+    assert series.width_to_mhz(20) == 20
+    assert series.width_to_mhz(80) == 80
+    # None fallback
+    assert series.width_to_mhz(None) == 20
+
+
+def test_to_series_enum_width():
+    """CoreWLAN passes enum values (1=20MHz, 2=40MHz, 3=80MHz) not raw MHz."""
+    nw = make_net("Test", "ff:ff:ff:ff", -50, series.CHANNEL_BAND_24, 6, 1)
+    s = series.to_series([nw])
+    # enum 1 → 20 MHz → half span 2
+    assert s[0]["channelWidth"] == 20
+    pts = s[0]["data"]
+    assert pts[0] == [4, -100]
+    assert pts[1] == [6, -50]
+    assert pts[2] == [8, -100]
+
+    nw80 = make_net("W80", "ff:ff:ff:ff", -60, series.CHANNEL_BAND_5, 100, 3)
+    s80 = series.to_series([nw80])
+    # enum 3 → 80 MHz → half span 8
+    assert s80[0]["channelWidth"] == 80
+    pts80 = s80[0]["data"]
+    assert pts80[0] == [92, -100]
+    assert pts80[1] == [100, -60]
+    assert pts80[2] == [108, -100]
 
 
 def test_to_series_6ghz_clamped_right():

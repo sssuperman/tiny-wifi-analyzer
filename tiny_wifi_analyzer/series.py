@@ -23,6 +23,22 @@ def channel_bounds_for_band(band: int) -> Tuple[int, int]:
     return 1, CHANNEL_NUMBER_MAX_5
 
 
+# CoreWLAN CWChannelWidth enum → MHz
+_WIDTH_ENUM_TO_MHZ = {0: 20, 1: 20, 2: 40, 3: 80, 4: 160}
+
+
+def width_to_mhz(raw: int | None) -> int:
+    """Convert a CoreWLAN CWChannelWidth enum value to MHz.
+
+    If the value is already in MHz (≥20), return it as-is.
+    """
+    if raw is None:
+        return 20
+    if raw >= 20:
+        return raw
+    return _WIDTH_ENUM_TO_MHZ.get(raw, 20)
+
+
 def channel_half_span_for_width(width_mhz: int | None) -> int:
     """Convert MHz channel width into half-span measured in channel number steps.
 
@@ -66,14 +82,14 @@ def to_series(nws: List[_Net]) -> List[dict]:
       - .rssi: int
       - .channel.channel_band: int
       - .channel.channel_number: int
-      - .channel.channel_width: int (MHz)
+      - .channel.channel_width: int (CWChannelWidth enum or MHz)
     """
     series = []
     for nw in nws:
         try:
             band = nw.channel.channel_band
             center = int(nw.channel.channel_number)
-            width_mhz = int(nw.channel.channel_width)
+            width_mhz = width_to_mhz(int(nw.channel.channel_width))
             half = channel_half_span_for_width(width_mhz)
             left = _clamp_channel(center - half, band)
             right = _clamp_channel(center + half, band)
@@ -83,6 +99,7 @@ def to_series(nws: List[_Net]) -> List[dict]:
                     # "bssid": nw.bssid,
                     "name": nw.bssid,
                     "ssid": nw.ssid,
+                    "channelWidth": width_mhz,
                     "data": [[left, -100], [center, int(nw.rssi)], [right, -100]],
                 }
             )
