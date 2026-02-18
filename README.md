@@ -76,6 +76,10 @@ pnpm run watch # or pnpm run build
 make build
 ```
 
+## Acknowledgements
+
+Thanks to [nolze](https://github.com/nolze) for creating the original Tiny Wi-Fi Analyzer. It's a clean, lightweight tool that fills a real gap on macOS — this fork builds on that solid foundation.
+
 ## License
 
 ```
